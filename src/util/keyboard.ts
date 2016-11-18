@@ -5,6 +5,7 @@ import { Form } from './form';
 import { hasFocusedTextInput, nativeRaf, zoneRafFrames, nativeTimeout } from './dom';
 import { Key } from './key';
 
+
 /**
  * @name Keyboard
  * @description
@@ -17,7 +18,6 @@ import { Key } from './key';
  *    this.keyboard = keyboard;
  *  }
  * }
- *
  * ```
  */
 
@@ -72,7 +72,7 @@ export class Keyboard {
  * @return {function} returns a callback that gets fired when the keyboard is closed
  */
   onClose(callback: Function, pollingInternval = KEYBOARD_CLOSE_POLLING, pollingChecksMax = KEYBOARD_POLLING_CHECKS_MAX) {
-    console.debug('keyboard onClose');
+    console.debug(`keyboard, onClose created`);
     const self = this;
     let checks = 0;
 
@@ -84,10 +84,10 @@ export class Keyboard {
     }
 
     function checkKeyboard() {
-      console.debug('keyboard isOpen', self.isOpen());
+      console.debug(`keyboard, isOpen: ${self.isOpen()}`);
       if (!self.isOpen() || checks > pollingChecksMax) {
         zoneRafFrames(30, () => {
-          console.debug('keyboard closed');
+          console.debug(`keyboard, closed`);
           callback();
         });
 
@@ -107,7 +107,7 @@ export class Keyboard {
  *
  */
   close() {
-    console.debug('keyboard close()');
+    console.debug(`keyboard, close()`);
     nativeRaf(() => {
       if (hasFocusedTextInput()) {
         // only focus out when a text input has focus
