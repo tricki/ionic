@@ -63,7 +63,7 @@ export function zoneRafFrames(framesToWait: number, callback: Function) {
   }
 }
 
-export let CSS: {
+export const CSS: {
   transform?: string,
   transition?: string,
   transitionDuration?: string,
@@ -228,11 +228,11 @@ export function isTextInput(ele: any) {
   return !!ele &&
          (ele.tagName === 'TEXTAREA' ||
           ele.contentEditable === 'true' ||
-          (ele.tagName === 'INPUT' && !(/^(radio|checkbox|range|file|submit|reset|color|image|button)$/i).test(ele.type)));
+          (ele.tagName === 'INPUT' && !(/^(radio|checkbox|range|file|submit|reset|color|image|button|hidden)$/i).test(ele.type)));
 }
 
 export function hasFocusedTextInput() {
-  let ele = <HTMLElement>document.activeElement;
+  const ele = <HTMLElement>document.activeElement;
   if (isTextInput(ele)) {
     return (ele.parentElement.querySelector(':focus') === ele);
   }
