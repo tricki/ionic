@@ -27,8 +27,13 @@ ion-img .img-placeholder {
   background: #eee;
 
   transition: opacity 200ms;
+  pointer-events: none;
 }
 
-ion-img.img-loaded .img-placeholder {
+.img-loaded .img-placeholder {
   opacity: 0;
+}
+
+.img-loaded.img-no-fade .img-placeholder {
+  transition: opacity 0ms;
 }

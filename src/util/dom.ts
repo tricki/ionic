@@ -51,7 +51,7 @@ export function rafFrames(framesToWait: number, callback: Function) {
   if (framesToWait === 0) {
     callback();
 
-  }else if (framesToWait < 2) {
+  } else if (framesToWait < 2) {
     rafId = nativeRaf(callback);
 
   } else {
@@ -81,6 +81,20 @@ export function zoneRafFrames(framesToWait: number, callback: Function) {
       raf(callback);
     }, (framesToWait - 1) * 16.6667);
   }
+}
+
+export function nativeRafThrottle(callback: any) {
+  var wait = false;
+
+  return function (ev: any) {
+    if (!wait) {
+      callback.call(this, ev);
+      wait = true;
+      nativeRaf(function () {
+        wait = false;
+      });
+    }
+  };
 }
 
 export const CSS: {

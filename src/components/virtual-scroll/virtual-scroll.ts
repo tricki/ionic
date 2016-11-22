@@ -1,10 +1,9 @@
-import { AfterContentInit, ChangeDetectorRef, ContentChild, ContentChildren, Directive, DoCheck, ElementRef, Input, IterableDiffers, IterableDiffer, NgZone, OnDestroy, Optional, QueryList, Renderer, TrackByFn } from '@angular/core';
+import { AfterContentInit, ChangeDetectorRef, ContentChild, Directive, DoCheck, ElementRef, Input, IterableDiffers, IterableDiffer, NgZone, OnDestroy, Optional, Renderer, TrackByFn } from '@angular/core';
 
-import { adjustRendered, calcDimensions, estimateHeight, initReadNodes, processRecords, populateNodeData, updateDimensions, writeToNodes } from './virtual-util';
+import { adjustRendered, calcDimensions, estimateHeight, initReadNodes, pauseImgs, processRecords, populateNodeData, updateDimensions, writeToNodes } from './virtual-util';
 import { clearNativeTimeout, nativeRaf, nativeTimeout } from '../../util/dom';
 import { Config } from '../../config/config';
-import { Content } from '../content/content';
-import { Img } from '../img/img';
+import { Content, ScrollEvent } from '../content/content';
 import { isBlank, isFunction, isPresent } from '../../util/util';
 import { Platform } from '../../platform/platform';
 import { ViewController } from '../../navigation/view-controller';
@@ -186,10 +185,9 @@ import { VirtualFooter, VirtualHeader, VirtualItem } from './virtual-item';
 export class VirtualScroll implements DoCheck, AfterContentInit, OnDestroy {
   _trackBy: TrackByFn;
   _differ: IterableDiffer;
-  _unreg: Function;
+  _scrollSub: any;
+  _scrollEndSub: any;
   _init: boolean;
-  _rafId: number;
-  _tmId: number;
   _hdrFn: Function;
   _ftrFn: Function;
   _records: any[] = [];
@@ -206,7 +204,7 @@ export class VirtualScroll implements DoCheck, AfterContentInit, OnDestroy {
   @ContentChild(VirtualItem) _itmTmp: VirtualItem;
   @ContentChild(VirtualHeader) _hdrTmp: VirtualHeader;
   @ContentChild(VirtualFooter) _ftrTmp: VirtualFooter;
-  @ContentChildren(Img) _imgs: QueryList<Img>;
+
 
   /**
    * @input {array} The data that builds the templates within the virtual scroll.
@@ -508,25 +506,29 @@ export class VirtualScroll implements DoCheck, AfterContentInit, OnDestroy {
   /**
    * @private
    */
-  scrollUpdate() {
-    clearNativeTimeout(this._tmId);
-    this._tmId = nativeTimeout(this.onScrollEnd.bind(this), SCROLL_END_TIMEOUT_MS);
+  scrollUpdate(ev: ScrollEvent) {
+    this._data.scrollTop = ev.currentY;
 
     let data = this._data;
 
     if (this._queue === QUEUE_CHANGE_DETECTION) {
-      // ******** DOM WRITE ****************
-      this._cd.detectChanges();
 
-      // ******** DOM WRITE ****************
-      writeToNodes(this._nodes, this._cells, this._records.length);
+      ev.domWrite(() => {
+        // we've got work painting do, let's throw it in the
+        // domWrite callback so everyone plays nice
+        // ******** DOM WRITE ****************
+        this._cd.detectChanges();
 
-      // ******** DOM WRITE ****************
-      this.setVirtualHeight(
-        estimateHeight(this._records.length, this._cells[this._cells.length - 1], this._vHeight, 0.25)
-      );
+        // ******** DOM WRITE ****************
+        writeToNodes(this._nodes, this._cells, this._records.length);
 
-      this._queue = null;
+        // ******** DOM WRITE ****************
+        this.setVirtualHeight(
+          estimateHeight(this._records.length, this._cells[this._cells.length - 1], this._vHeight, 0.25)
+        );
+
+        this._queue = null;
+      });
 
     } else {
 
@@ -558,11 +560,6 @@ export class VirtualScroll implements DoCheck, AfterContentInit, OnDestroy {
                               this._ftrTmp && this._ftrTmp.templateRef, false);
 
         if (madeChanges) {
-          // do not update images while scrolling
-          this._imgs.forEach(img => {
-            img.enable(false);
-          });
-
           // queue making updates in the next frame
           this._queue = QUEUE_CHANGE_DETECTION;
 
@@ -578,24 +575,27 @@ export class VirtualScroll implements DoCheck, AfterContentInit, OnDestroy {
    * @private
    * DOM WRITE
    */
-  onScrollEnd() {
-    // scrolling is done, allow images to be updated now
-    this._imgs.forEach(img => {
-      img.enable(true);
-    });
-
+  scrollEnd(ev: ScrollEvent) {
     // ******** DOM READ ****************
     updateDimensions(this._nodes, this._cells, this._data, false);
 
     adjustRendered(this._cells, this._data);
 
-    // ******** DOM WRITE ****************
-    this._cd.detectChanges();
+    // ******** DOM READS ABOVE / DOM WRITES BELOW ****************
 
-    // ******** DOM WRITE ****************
-    this.setVirtualHeight(
-      estimateHeight(this._records.length, this._cells[this._cells.length - 1], this._vHeight, 0.05)
-    );
+    ev.domWrite(() => {
+      // scrolling is done, allow images to be updated now
+      // ******** DOM WRITE ****************
+      // abort all of the images that are not viewable
+
+      // ******** DOM WRITE ****************
+      this._cd.detectChanges();
+
+      // ******** DOM WRITE ****************
+      this.setVirtualHeight(
+        estimateHeight(this._records.length, this._cells[this._cells.length - 1], this._vHeight, 0.05)
+      );
+    });
   }
 
   /**
@@ -617,33 +617,21 @@ export class VirtualScroll implements DoCheck, AfterContentInit, OnDestroy {
    * NO DOM
    */
   addScrollListener() {
-    let self = this;
-
-    if (!self._unreg) {
-      self._zone.runOutsideAngular(() => {
-
-        function onScroll() {
-          // ******** DOM READ ****************
-          self._data.scrollTop = self._content.getScrollTop();
-
-          // ******** DOM READ THEN DOM WRITE ****************
-          self.scrollUpdate();
-        }
-
-        if (self._eventAssist) {
-          // use JS scrolling for iOS UIWebView
-          // goal is to completely remove this when iOS
-          // fully supports scroll events
-          // listen to JS scroll events
-          self._unreg = self._content.jsScroll(onScroll);
-
-        } else {
-          // listen to native scroll events
-          self._unreg = self._content.addScrollListener(onScroll);
-        }
-
-      });
+    if (this._eventAssist) {
+      // use JS scrolling for iOS UIWebView
+      // goal is to completely remove this when iOS
+      // fully supports scroll events
+      // listen to JS scroll events
+      this._content.enableJsScroll();
     }
+
+    this._scrollSub = this._content.ionScroll.subscribe((ev: ScrollEvent) => {
+      this.scrollUpdate(ev);
+    });
+
+    this._scrollEndSub = this._content.ionScrollEnd.subscribe((ev: ScrollEvent) => {
+      this.scrollEnd(ev);
+    });
   }
 
   /**
@@ -651,12 +639,11 @@ export class VirtualScroll implements DoCheck, AfterContentInit, OnDestroy {
    * NO DOM
    */
   ngOnDestroy() {
-    this._unreg && this._unreg();
-    this._unreg = null;
+    this._scrollSub && this._scrollSub.unsubscribe();
+    this._scrollEndSub && this._scrollEndSub.unsubscribe();
   }
 
 }
 
-const SCROLL_END_TIMEOUT_MS = 140;
 const SCROLL_DIFFERENCE_MINIMUM = 20;
 const QUEUE_CHANGE_DETECTION = 0;

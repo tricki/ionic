@@ -1,15 +1,17 @@
-import { ChangeDetectionStrategy, Component, ElementRef, Input, NgZone, Optional, Renderer, ViewEncapsulation } from '@angular/core';
+import { ChangeDetectionStrategy, Component, ElementRef, EventEmitter, Input, NgZone, OnDestroy, OnInit, Optional, Output, Renderer, ViewEncapsulation } from '@angular/core';
 
 import { App } from '../app/app';
-import { Ion } from '../ion';
 import { Config } from '../../config/config';
+import { eventOptions } from '../../util/ui-event-manager';
+import { Ion } from '../ion';
+import { isTrueProperty, assert } from '../../util/util';
 import { Keyboard } from '../../util/keyboard';
-import { nativeRaf, nativeTimeout, transitionEnd } from '../../util/dom';
+import { nativeRaf, transitionEnd } from '../../util/dom';
 import { ScrollView } from '../../util/scroll-view';
 import { Tabs } from '../tabs/tabs';
 import { ViewController } from '../../navigation/view-controller';
-import { isTrueProperty, assert } from '../../util/util';
 
+export { ScrollEvent } from '../../util/scroll-view';
 
 /**
  * @name Content
@@ -116,7 +118,7 @@ import { isTrueProperty, assert } from '../../util/util';
   changeDetection: ChangeDetectionStrategy.OnPush,
   encapsulation: ViewEncapsulation.None
 })
-export class Content extends Ion {
+export class Content extends Ion implements OnDestroy, OnInit {
   _paddingTop: number;
   _paddingRight: number;
   _paddingBottom: number;
@@ -155,6 +157,22 @@ export class Content extends Ion {
    */
   contentBottom: number;
 
+  /**
+   * @private
+   */
+  @Output() ionScrollStart: EventEmitter<any> = new EventEmitter<any>();
+
+  /**
+   * @private
+   */
+  @Output() ionScroll: EventEmitter<any> = new EventEmitter<any>();
+
+  /**
+   * @private
+   */
+  @Output() ionScrollEnd: EventEmitter<any> = new EventEmitter<any>();
+
+
   constructor(
     config: Config,
     elementRef: ElementRef,
@@ -179,15 +197,31 @@ export class Content extends Ion {
    * @private
    */
   ngOnInit() {
-    let children = this._elementRef.nativeElement.children;
+    const children = this._elementRef.nativeElement.children;
     assert(children && children.length >= 2, 'content needs at least two children');
 
     this._fixedEle = children[0];
     this._scrollEle = children[1];
 
-    this._zone.runOutsideAngular(() => {
-      this._scroll = new ScrollView(this._scrollEle);
-      this._scLsn = this.addScrollListener(this._app.setScrolling.bind(this._app));
+    // create a scroll view on the scrollable element
+    this._scroll = new ScrollView(this._scrollEle);
+
+    // subscribe to the scroll start
+    this._scroll.scrollStart.subscribe(scrollData => {
+      this.ionScrollStart.emit(scrollData);
+    });
+
+    // subscribe to every scroll move
+    this._scroll.scroll.subscribe(scrollData => {
+      // remind the app that it's currently scrolling
+      this._app.setScrolling();
+
+      this.ionScroll.emit(scrollData);
+    });
+
+    // subscribe to the scroll end
+    this._scroll.scrollEnd.subscribe(scrollData => {
+      this.ionScrollEnd.emit(scrollData);
     });
   }
 
@@ -197,72 +231,67 @@ export class Content extends Ion {
   ngOnDestroy() {
     this._scLsn && this._scLsn();
     this._scroll && this._scroll.destroy();
-    this._scrollEle = this._footerEle = this._scLsn = this._scroll = null;
-  }
-
-  /**
-   * @private
-   */
-  addScrollListener(handler: any) {
-    return this._addListener('scroll', handler);
+    this._scrollEle = this._fixedEle = this._footerEle = this._scLsn = this._scroll = null;
   }
 
   /**
    * @private
    */
   addTouchStartListener(handler: any) {
-    return this._addListener('touchstart', handler);
+    return this._addListener('touchstart', handler, false);
   }
 
   /**
    * @private
    */
   addTouchMoveListener(handler: any) {
-    return this._addListener('touchmove', handler);
+    return this._addListener('touchmove', handler, true);
   }
 
   /**
    * @private
    */
   addTouchEndListener(handler: any) {
-    return this._addListener('touchend', handler);
+    return this._addListener('touchend', handler, false);
   }
 
   /**
    * @private
    */
   addMouseDownListener(handler: any) {
-    return this._addListener('mousedown', handler);
+    return this._addListener('mousedown', handler, false);
   }
 
   /**
    * @private
    */
   addMouseUpListener(handler: any) {
-    return this._addListener('mouseup', handler);
+    return this._addListener('mouseup', handler, false);
   }
 
   /**
    * @private
    */
   addMouseMoveListener(handler: any) {
-    return this._addListener('mousemove', handler);
+    return this._addListener('mousemove', handler, true);
   }
 
   /**
    * @private
    */
-  _addListener(type: string, handler: any): Function {
+  _addListener(type: string, handler: any, usePassive: boolean): Function {
     assert(handler, 'handler must be valid');
     assert(this._scrollEle, '_scrollEle must be valid');
 
+    const opts = eventOptions(false, usePassive);
+
     // ensure we're not creating duplicates
-    this._scrollEle.removeEventListener(type, handler);
-    this._scrollEle.addEventListener(type, handler);
+    this._scrollEle.removeEventListener(type, handler, opts);
+    this._scrollEle.addEventListener(type, handler, opts);
 
     return () => {
       if (this._scrollEle) {
-        this._scrollEle.removeEventListener(type, handler);
+        this._scrollEle.removeEventListener(type, handler, opts);
       }
     };
   }
@@ -272,42 +301,6 @@ export class Content extends Ion {
    */
   getScrollElement(): HTMLElement {
     return this._scrollEle;
-  }
-
-  /**
-   * @private
-   * Call a method when scrolling has stopped
-   * @param {Function} callback The method you want perform when scrolling has ended
-   */
-  onScrollEnd(callback: Function) {
-    let lastScrollTop: number = null;
-    let framesUnchanged: number = 0;
-    let _scrollEle = this._scrollEle;
-
-    function next() {
-      let currentScrollTop = _scrollEle.scrollTop;
-      if (lastScrollTop !== null) {
-
-        if (Math.round(lastScrollTop) === Math.round(currentScrollTop)) {
-          framesUnchanged++;
-
-        } else {
-          framesUnchanged = 0;
-        }
-
-        if (framesUnchanged > 9) {
-          return callback();
-        }
-      }
-
-      lastScrollTop = currentScrollTop;
-
-      nativeRaf(() => {
-        nativeRaf(next);
-      });
-    }
-
-    nativeTimeout(next, 100);
   }
 
   /**
@@ -368,11 +361,8 @@ export class Content extends Ion {
     return this._scroll.scrollToBottom(duration);
   }
 
-  /**
-   * @private
-   */
-  jsScroll(onScrollCallback: Function): Function {
-    return this._scroll.jsScroll(onScrollCallback);
+  enableJsScroll() {
+    this._scroll.enableJsScroll();
   }
 
   /**

@@ -16,6 +16,7 @@ import { Events, setupProvideEvents } from './util/events';
 import { Form } from './util/form';
 import { GestureController } from './gestures/gesture-controller';
 import { Haptic } from './util/haptic';
+import { ImgLoader } from './components/img/img-loader';
 import { IonicGestureConfig } from './gestures/gesture-config';
 import { Keyboard } from './util/keyboard';
 import { LoadingController } from './components/loading/loading';
@@ -171,6 +172,7 @@ export class IonicModule {
         Form,
         Haptic,
         GestureController,
+        ImgLoader,
         Keyboard,
         LoadingController,
         Location,

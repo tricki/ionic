@@ -238,6 +238,8 @@ export class TextInput extends InputBase {
    */
   ngOnDestroy() {
     this._form.deregister(this);
+    this._scrollStart.unsubscribe();
+    this._scrollEnd.unsubscribe();
   }
 
   /**
@@ -405,6 +407,8 @@ export class TextArea extends InputBase {
    */
   ngOnDestroy() {
     this._form.deregister(this);
+    this._scrollStart.unsubscribe();
+    this._scrollEnd.unsubscribe();
   }
 
   /**

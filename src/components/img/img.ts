@@ -1,7 +1,9 @@
-import { Component, Input, HostBinding, ElementRef, ChangeDetectionStrategy, ViewEncapsulation, NgZone } from '@angular/core';
+import { ChangeDetectionStrategy, Component, ElementRef, HostBinding, Input, NgZone, Optional, Renderer, ViewChild, ViewEncapsulation } from '@angular/core';
 
-import { nativeRaf } from '../../util/dom';
+import { Content } from '../content/content';
+import { ImgLoader } from './img-loader';
 import { isPresent } from '../../util/util';
+import { nativeRaf } from '../../util/dom';
 import { Platform } from '../../platform/platform';
 
 
@@ -11,103 +13,136 @@ import { Platform } from '../../platform/platform';
 @Component({
   selector: 'ion-img',
   template:
-    '<div class="img-placeholder" [style.height]="_h" [style.width]="_w"></div>',
+    '<div class="img-placeholder" [style.height]="_h" [style.width]="_w"></div>' +
+    '<img class="ion-img" #img>',
   changeDetection: ChangeDetectionStrategy.OnPush,
   encapsulation: ViewEncapsulation.None,
 })
 export class Img {
+  /** @private */
   _src: string = '';
-  _normalizeSrc: string = '';
-  _imgs: HTMLImageElement[] = [];
+  /** @private */
+  _pSrc: string = '';
+  /** @private */
   _w: string;
+  /** @private */
   _h: string;
-  _enabled: boolean = true;
+  /** @private */
+  _isPaused: boolean;
+  /** @private */
   _init: boolean;
+  /** @private */
+  _cache: boolean = true;
+  /** @private */
+  @ViewChild('img') _img: ElementRef;
 
-  constructor(private _elementRef: ElementRef, private _platform: Platform, private _zone: NgZone) {}
 
-  @Input()
-  set src(val: string) {
-    let tmpImg = new Image();
-    tmpImg.src = isPresent(val) ? val : '';
-
-    this._src = isPresent(val) ? val : '';
-    this._normalizeSrc = tmpImg.src;
-
-    if (this._init) {
-      this._update();
-    }
+  constructor(
+    private _imgLoader: ImgLoader,
+    private _elementRef: ElementRef,
+    private _renderer: Renderer,
+    private _platform: Platform,
+    private _zone: NgZone,
+    @Optional() private _content: Content
+  ) {
+    this._loaded(false, true);
   }
 
   ngOnInit() {
+    // img component is initialized now
     this._init = true;
-    this._update();
+    if (isValidSrc(this._pSrc) && !this._isPaused) {
+      this._load();
+    }
+
   }
 
-  _update() {
-    if (this._enabled && this._src !== '') {
-      // actively update the image
+  @Input()
+  get src(): string {
+    return this._src;
+  }
+  set src(val: string) {
+    if (!isValidSrc(val)) {
+      this._pSrc = this._src = val;
+      this._loaded(false, false);
+      return;
+    }
 
-      for (var i = this._imgs.length - 1; i >= 0; i--) {
-        if (this._imgs[i].src === this._normalizeSrc) {
-          // this is the active image
-          if (this._imgs[i].complete) {
-            this._loaded(true);
-          }
+    // valid src
+    this._pSrc = val;
 
-        } else {
-          // no longer the active image
-          if (this._imgs[i].parentElement) {
-            this._imgs[i].parentElement.removeChild(this._imgs[i]);
-          }
-          this._imgs.splice(i, 1);
-        }
-      }
+    if (this._isPaused) {
+      this._loaded(false, false);
+      return;
+    }
 
-      if (!this._imgs.length) {
-        this._zone.runOutsideAngular(() => {
-          let img = new Image();
-          img.style.width = this._width;
-          img.style.height = this._height;
-
-          if (isPresent(this.alt)) {
-            img.alt = this.alt;
-          }
-          if (isPresent(this.title)) {
-            img.title = this.title;
-          }
-
-          img.addEventListener('load', () => {
-            if (img.src === this._normalizeSrc) {
-              this._elementRef.nativeElement.appendChild(img);
-              nativeRaf(() => {
-                this._update();
-              });
-            }
-          });
-
-          img.src = this._src;
-
-          this._imgs.push(img);
-          this._loaded(false);
-        });
-      }
-
-    } else {
-      // do not actively update the image
-      if (!this._imgs.some(img => img.src === this._normalizeSrc)) {
-        this._loaded(false);
-      }
+    if (this._init) {
+      // this component has been initialized
+      // so let's do the actual update
+      this._load();
+      this._loaded(false, true);
     }
   }
 
-  _loaded(isLoaded: boolean) {
-    this._elementRef.nativeElement.classList[isLoaded ? 'add' : 'remove']('img-loaded');
+  /**
+   * @private
+   * "pausing" an image will allow existing http requests to continue,
+   * but once completed  they will not be rendered since it might cause
+   * jank (probably scrolling fast if it's paused). New http requests will
+   * also not kick off at this time since we might not even need the
+   * image since we could be scrolling by it quickly.
+   */
+  pause(shouldLock: boolean) {
+    this._isPaused = shouldLock;
+
+    if (!shouldLock) {
+      // just been unlocked
+
+    }
   }
 
-  enable(shouldEnable: boolean) {
-    this._enabled = shouldEnable;
-    this._update();
+  _load() {
+    // this._imgLoader.load(this._pSrc, this._cache, msg => {
+    //   if (this._isPaused) return;
+
+    //   nativeRaf(() => {
+    //     if (this._isPaused) return;
+
+    //     if (msg.status === 200) {
+    //       // success :)
+    //       this._src = msg.src;
+    //       this._srcAttr(msg.data);
+    //       this._loaded(true, true);
+
+    //     } else {
+    //       // error :(
+    //       console.error(`img, ${msg.msg}`);
+
+    //       this._src = '';
+    //       this._srcAttr('');
+    //       this._loaded(false, false);
+    //     }
+    //   });
+    // });
+  }
+
+  _loaded(isLoaded: boolean, useFadeTransition: boolean) {
+    this._renderer.setElementClass(this._elementRef.nativeElement, 'img-loaded', isLoaded);
+    this._renderer.setElementClass(this._elementRef.nativeElement, 'img-no-fade', !useFadeTransition);
+  }
+
+  _srcAttr(srcValue: string) {
+    if (this._img) {
+      this._renderer.setElementAttribute(this._img.nativeElement, 'src', srcValue);
+    }
+  }
+
+  @Input()
+  get cache(): boolean {
+    return this._cache;
+  }
+  set cache(val: boolean) {
+    this._cache = val;
   }
 
   @Input()
@@ -151,4 +186,9 @@ function getUnitValue(val: any): string {
     }
   }
   return '';
+}
+
+
+function isValidSrc(src: string) {
+  return isPresent(src) && src !== '';
 }
