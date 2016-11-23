@@ -3,7 +3,7 @@ import { ChangeDetectionStrategy, Component, ElementRef, HostBinding, Input, NgZ
 import { Content } from '../content/content';
 import { ImgLoader } from './img-loader';
 import { isPresent, isTrueProperty } from '../../util/util';
-// import { nativeRaf } from '../../util/dom';
+import { nativeRaf } from '../../util/dom';
 import { Platform } from '../../platform/platform';
 
 
@@ -20,9 +20,11 @@ import { Platform } from '../../platform/platform';
 })
 export class Img implements OnDestroy, OnInit {
   /** @private */
-  _src: string = '';
+  _pendingSrc: string = '';
   /** @private */
-  _pSrc: string = '';
+  _loadedSrc: string = '';
+  /** @private */
+  _tmpDataUri: string;
   /** @private */
   _w: string;
   /** @private */
@@ -55,28 +57,31 @@ export class Img implements OnDestroy, OnInit {
   ngOnInit() {
     // img component is initialized now
     this._init = true;
-    if (isValidSrc(this._pSrc) && !this._isPaused) {
+    if (isValidSrc(this._pendingSrc) && !this._isPaused) {
       this._load();
     }
 
     if (this._lazyLoad) {
-      this._content.addLazyImage(this);
+      this._content.addImg(this);
     }
   }
 
   @Input()
   get src(): string {
-    return this._src;
+    return this._loadedSrc;
   }
   set src(val: string) {
     if (!isValidSrc(val)) {
-      this._pSrc = this._src = val;
+      this._pendingSrc = val;
       this._loaded(false, false);
       return;
     }
 
     // valid src
-    this._pSrc = val;
+    this._pendingSrc = val;
+
+    // reset any datauri data we might have
+    this._tmpDataUri = null;
 
     if (this._isPaused) {
       this._loaded(false, false);
@@ -99,12 +104,94 @@ export class Img implements OnDestroy, OnInit {
    * also not kick off at this time since we might not even need the
    * image since we could be scrolling by it quickly.
    */
-  pause(shouldPause: boolean) {
-    this._isPaused = shouldPause;
+  pause() {
+    this._isPaused = true;
+  }
 
-    if (!shouldPause) {
-      // just been unpaused
+  /**
+   * @private
+   * "pausing" an image will allow existing http requests to continue,
+   * but once completed  they will not be rendered since it might cause
+   * jank (probably scrolling fast if it's paused). New http requests will
+   * also not kick off at this time since we might not even need the
+   * image since we could be scrolling by it quickly.
+   */
+  play() {
+    this._isPaused = false;
 
+    if (this._tmpDataUri) {
+      // we've already got a datauri to show!
+      this._srcAttr(this._tmpDataUri);
+      this._loaded(true, true);
+      this._tmpDataUri = null;
+    }
+  }
+
+  _load() {
+    if (this._webWorker) {
+      // load with the web worker
+      // and receive a datauri to put into the src
+      this._imgLoader.load(this._pendingSrc, this._cache, msg => {
+        nativeRaf(() => {
+          this._receivedMsg(msg);
+        });
+      });
+
+    } else {
+      // do not use web worker
+      // set the src normally
+      this._loadedSrc = this._pendingSrc;
+      this._tmpDataUri = null;
+      this._srcAttr(this._loadedSrc);
+      this._loaded(true, true);
+    }
+  }
+
+  _receivedMsg(msg: ImgResponseMessage) {
+    if (msg.src !== this._pendingSrc) {
+      // the src already changed on us
+      // so this data is no longer valid!!
+      this._loadedSrc = '';
+      this._srcAttr('');
+      this._tmpDataUri = null;
+      this._loaded(false, false);
+
+    } else if (msg.status === 200) {
+      // success :)
+      // remember this is the loaded src
+      this._loadedSrc = msg.src;
+
+      if (this._isPaused) {
+        // we're currently paused, so we don't want to render anything
+        // but we did get back the data successfully, so let's remember it
+        // and maybe we can render it later
+        this._tmpDataUri = msg.data;
+
+      } else {
+        // it's not paused, so it's safe to render the datauri
+        this._srcAttr(msg.data);
+        this._loaded(true, true);
+      }
+
+    } else {
+      // error :(
+      console.error(`img, ${msg.msg}`);
+
+      this._loadedSrc = '';
+      this._srcAttr('');
+      this._tmpDataUri = null;
+      this._loaded(false, false);
+    }
+  }
+
+  _loaded(isLoaded: boolean, useFadeTransition: boolean) {
+    this._renderer.setElementClass(this._elementRef.nativeElement, 'img-loaded', isLoaded);
+    this._renderer.setElementClass(this._elementRef.nativeElement, 'img-no-fade', !useFadeTransition);
+  }
+
+  _srcAttr(srcValue: string) {
+    if (this._img) {
+      this._renderer.setElementAttribute(this._img.nativeElement, 'src', srcValue);
     }
   }
 
@@ -142,42 +229,6 @@ export class Img implements OnDestroy, OnInit {
       parentEle = parentEle.parentElement;
     }
     return ele.offsetLeft;
-  }
-
-  _load() {
-    // this._imgLoader.load(this._pSrc, this._cache, msg => {
-    //   if (this._isPaused) return;
-
-    //   nativeRaf(() => {
-    //     if (this._isPaused) return;
-
-    //     if (msg.status === 200) {
-    //       // success :)
-    //       this._src = msg.src;
-    //       this._srcAttr(msg.data);
-    //       this._loaded(true, true);
-
-    //     } else {
-    //       // error :(
-    //       console.error(`img, ${msg.msg}`);
-
-    //       this._src = '';
-    //       this._srcAttr('');
-    //       this._loaded(false, false);
-    //     }
-    //   });
-    // });
-  }
-
-  _loaded(isLoaded: boolean, useFadeTransition: boolean) {
-    this._renderer.setElementClass(this._elementRef.nativeElement, 'img-loaded', isLoaded);
-    this._renderer.setElementClass(this._elementRef.nativeElement, 'img-no-fade', !useFadeTransition);
-  }
-
-  _srcAttr(srcValue: string) {
-    if (this._img) {
-      this._renderer.setElementAttribute(this._img.nativeElement, 'src', srcValue);
-    }
   }
 
   @Input()
@@ -229,7 +280,7 @@ export class Img implements OnDestroy, OnInit {
   }
 
   ngOnDestroy() {
-    this._content.removeLazyImage(this);
+    this._content.removeImg(this);
   }
 
 }

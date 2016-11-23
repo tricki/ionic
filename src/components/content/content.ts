@@ -135,7 +135,7 @@ export class Content extends Ion implements OnDestroy, OnInit {
   _sbPadding: boolean;
   _fullscreen: boolean;
   _lazyLoadImages: boolean = true;
-  _lazyImgs: Img[] = [];
+  _imgs: Img[] = [];
   _footerEle: HTMLElement;
 
   /*
@@ -214,21 +214,47 @@ export class Content extends Ion implements OnDestroy, OnInit {
     // subscribe to the scroll start
     this._scroll.scrollStart.subscribe(ev => {
       this.ionScrollStart.emit(ev);
-      pauseLazyImages(this._lazyImgs);
     });
+
+    var imgsPaused = false;
 
     // subscribe to every scroll move
     this._scroll.scroll.subscribe(ev => {
       // remind the app that it's currently scrolling
-      this._app.setScrolling();
+      this._app.setScrolling(ev.timeStamp);
 
+      // emit to all of our other friends things be scrolling
       this.ionScroll.emit(ev);
+
+      // see if we should pause or play images
+      // depending on scroll velocity
+      const velocityY = Math.abs(ev.velocityY);
+      if (imgsPaused && velocityY < PAUSE_IMAGES_VELOCITY) {
+        // images are currently paused but the velocity
+        // is really slow, so it's ok to play them again
+        playImgs(this._imgs, ev);
+        imgsPaused = false;
+
+      } else if (!imgsPaused && velocityY > PAUSE_IMAGES_VELOCITY) {
+        // lazy images are not currently paused
+        // but we're scrolling really fast!!
+        // let's pause them so we don't cause jank
+        pauseImgs(this._imgs);
+        imgsPaused = true;
+      }
     });
 
     // subscribe to the scroll end
     this._scroll.scrollEnd.subscribe(ev => {
       this.ionScrollEnd.emit(ev);
-      playLazyImages(this._lazyImgs, ev);
+
+      if (imgsPaused) {
+        // images are currently paused
+        // so let's play them again cuz we've stopped scrolling
+        playImgs(this._imgs, ev);
+        imgsPaused = false;
+      }
+
     });
   }
 
@@ -405,17 +431,17 @@ export class Content extends Ion implements OnDestroy, OnInit {
   /**
    * @private
    */
-  addLazyImage(img: Img) {
-    this._lazyImgs.push(img);
+  addImg(img: Img) {
+    this._imgs.push(img);
   }
 
   /**
    * @private
    */
-  removeLazyImage(img: Img) {
-    const index = this._lazyImgs.indexOf(img);
+  removeImg(img: Img) {
+    const index = this._imgs.indexOf(img);
     if (index > -1) {
-      this._lazyImgs.splice(index, 1);
+      this._imgs.splice(index, 1);
     }
   }
 
@@ -669,14 +695,14 @@ export class Content extends Ion implements OnDestroy, OnInit {
 
 }
 
-function pauseLazyImages(imgs: Img[]) {
+function pauseImgs(imgs: Img[]) {
   // all images should be paused
   for (var i = 0; i < imgs.length; i++) {
-    imgs[i].pause(true);
+    imgs[i].pause();
   }
 }
 
-function playLazyImages(imgs: Img[], ev: ScrollEvent) {
+function playImgs(imgs: Img[], ev: ScrollEvent) {
   // unpause images
   // abort those who shouldn't be taking up connections and not viewable
   // keep letting requests go that are viewable
@@ -684,33 +710,35 @@ function playLazyImages(imgs: Img[], ev: ScrollEvent) {
 
   // build a list by sorting all the images from top to bottom
   // ******** DOM READ ****************
-  // const topToBottom = imgs.sort(sortTopToBottom);
+  const topToBottom = imgs.sort(sortTopToBottom);
 
-  // ev.domWrite(() => {
-
-  // });
+  ev.domWrite(() => {
+    for (var i = 0; i < topToBottom.length; i++) {
+      topToBottom[i].play();
+    }
+  });
 }
 
-// function sortTopToBottom(a: Img, b: Img) {
-//   const aTop = a.getTop();
-//   const bTop = b.getTop();
-//   if (aTop < bTop) {
-//     return -1;
-//   }
-//   if (aTop > bTop) {
-//     return 1;
-//   }
+function sortTopToBottom(a: Img, b: Img) {
+  const aTop = a.getTop();
+  const bTop = b.getTop();
+  if (aTop < bTop) {
+    return -1;
+  }
+  if (aTop > bTop) {
+    return 1;
+  }
 
-//   const aLeft = a.getLeft();
-//   const bLeft = b.getLeft();
-//   if (aLeft < bLeft) {
-//     return -1;
-//   }
-//   if (aLeft > bLeft) {
-//     return 1;
-//   }
-//   return 0;
-// }
+  const aLeft = a.getLeft();
+  const bLeft = b.getLeft();
+  if (aLeft < bLeft) {
+    return -1;
+  }
+  if (aLeft > bLeft) {
+    return 1;
+  }
+  return 0;
+}
 
 function parsePxUnit(val: string): number {
   return (val.indexOf('px') > 0) ? parseInt(val, 10) : 0;
@@ -734,3 +762,5 @@ export interface ContentDimensions {
   scrollWidth: number;
   scrollLeft: number;
 }
+
+const PAUSE_IMAGES_VELOCITY = 3;
