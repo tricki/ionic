@@ -1,6 +1,6 @@
 import { Directive, ElementRef, EventEmitter, Host, Input, NgZone, Output } from '@angular/core';
 
-import { Content } from '../content/content';
+import { Content, ScrollEvent } from '../content/content';
 
 
 /**
@@ -97,7 +97,7 @@ import { Content } from '../content/content';
 export class InfiniteScroll {
   _lastCheck: number = 0;
   _highestY: number = 0;
-  _scLsn: Function;
+  _scLsn: any;
   _thr: string = '15%';
   _thrPx: number = 0;
   _thrPc: number = 0.15;
@@ -161,7 +161,7 @@ export class InfiniteScroll {
     _content.setElementClass('has-infinite-scroll', true);
   }
 
-  _onScroll() {
+  _onScroll(ev: ScrollEvent) {
     if (this.state === STATE_LOADING || this.state === STATE_DISABLED) {
       return 1;
     }
@@ -174,12 +174,14 @@ export class InfiniteScroll {
     }
     this._lastCheck = now;
 
+    // ******** DOM READ ****************
     let infiniteHeight = this._elementRef.nativeElement.scrollHeight;
     if (!infiniteHeight) {
       // if there is no height of this element then do nothing
       return 3;
     }
 
+    // ******** DOM READ ****************
     let d = this._content.getContentDimensions();
 
     let reloadY = d.contentHeight;
@@ -189,13 +191,18 @@ export class InfiniteScroll {
       reloadY += this._thrPx;
     }
 
+    // ******** DOM READS ABOVE / DOM WRITES BELOW ****************
+
     let distanceFromInfinite = ((d.scrollHeight - infiniteHeight) - d.scrollTop) - reloadY;
     if (distanceFromInfinite < 0) {
-      this._zone.run(() => {
-        if (this.state !== STATE_LOADING && this.state !== STATE_DISABLED) {
-          this.state = STATE_LOADING;
-          this.ionInfinite.emit(this);
-        }
+      // ******** DOM WRITE ****************
+      ev.domWrite(() => {
+        this._zone.run(() => {
+          if (this.state !== STATE_LOADING && this.state !== STATE_DISABLED) {
+            this.state = STATE_LOADING;
+            this.ionInfinite.emit(this);
+          }
+        });
       });
       return 5;
     }
@@ -238,12 +245,12 @@ export class InfiniteScroll {
     if (this._init) {
       if (shouldListen) {
         if (!this._scLsn) {
-          this._zone.runOutsideAngular(() => {
-            this._scLsn = this._content.addScrollListener( this._onScroll.bind(this) );
+          this._scLsn = this._content.ionScroll.subscribe((ev: ScrollEvent) => {
+            this._onScroll(ev);
           });
         }
       } else {
-        this._scLsn && this._scLsn();
+        this._scLsn && this._scLsn.unsubscribe();
         this._scLsn = null;
       }
     }

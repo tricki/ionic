@@ -3,7 +3,7 @@ import { ChangeDetectionStrategy, Component, ElementRef, HostBinding, Input, NgZ
 import { Content } from '../content/content';
 import { ImgLoader } from './img-loader';
 import { isPresent, isTrueProperty } from '../../util/util';
-import { nativeRaf } from '../../util/dom';
+// import { nativeRaf } from '../../util/dom';
 import { Platform } from '../../platform/platform';
 
 

@@ -1,7 +1,7 @@
 import { AfterContentInit, ChangeDetectorRef, ContentChild, Directive, DoCheck, ElementRef, Input, IterableDiffers, IterableDiffer, NgZone, OnDestroy, Optional, Renderer, TrackByFn } from '@angular/core';
 
-import { adjustRendered, calcDimensions, estimateHeight, initReadNodes, pauseImgs, processRecords, populateNodeData, updateDimensions, writeToNodes } from './virtual-util';
-import { clearNativeTimeout, nativeRaf, nativeTimeout } from '../../util/dom';
+import { adjustRendered, calcDimensions, estimateHeight, initReadNodes, processRecords, populateNodeData, updateDimensions, writeToNodes } from './virtual-util';
+import { nativeRaf } from '../../util/dom';
 import { Config } from '../../config/config';
 import { Content, ScrollEvent } from '../content/content';
 import { isBlank, isFunction, isPresent } from '../../util/util';
@@ -507,7 +507,7 @@ export class VirtualScroll implements DoCheck, AfterContentInit, OnDestroy {
    * @private
    */
   scrollUpdate(ev: ScrollEvent) {
-    this._data.scrollTop = ev.currentY;
+    this._data.scrollTop = ev.scrollTop;
 
     let data = this._data;
 

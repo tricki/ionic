@@ -684,33 +684,33 @@ function playLazyImages(imgs: Img[], ev: ScrollEvent) {
 
   // build a list by sorting all the images from top to bottom
   // ******** DOM READ ****************
-  const topToBottom = imgs.sort(sortTopToBottom);
+  // const topToBottom = imgs.sort(sortTopToBottom);
 
-  ev.domWrite(() => {
+  // ev.domWrite(() => {
 
-  });
+  // });
 }
 
-function sortTopToBottom(a: Img, b: Img) {
-  const aTop = a.getTop();
-  const bTop = b.getTop();
-  if (aTop < bTop) {
-    return -1;
-  }
-  if (aTop > bTop) {
-    return 1;
-  }
+// function sortTopToBottom(a: Img, b: Img) {
+//   const aTop = a.getTop();
+//   const bTop = b.getTop();
+//   if (aTop < bTop) {
+//     return -1;
+//   }
+//   if (aTop > bTop) {
+//     return 1;
+//   }
 
-  const aLeft = a.getLeft();
-  const bLeft = b.getLeft();
-  if (aLeft < bLeft) {
-    return -1;
-  }
-  if (aLeft > bLeft) {
-    return 1;
-  }
-  return 0;
-}
+//   const aLeft = a.getLeft();
+//   const bLeft = b.getLeft();
+//   if (aLeft < bLeft) {
+//     return -1;
+//   }
+//   if (aLeft > bLeft) {
+//     return 1;
+//   }
+//   return 0;
+// }
 
 function parsePxUnit(val: string): number {
   return (val.indexOf('px') > 0) ? parseInt(val, 10) : 0;

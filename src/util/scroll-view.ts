@@ -1,7 +1,7 @@
 import { Subject } from 'rxjs/Subject';
 
 import { assert } from './util';
-import { CSS, pointerCoord, rafFrames, nativeRaf, nativeRafDebounce, cancelRaf } from '../util/dom';
+import { CSS, pointerCoord, rafFrames, nativeRaf, cancelRaf } from '../util/dom';
 import { eventOptions, listenEvent } from './ui-event-manager';
 
 
@@ -14,6 +14,7 @@ export class ScrollView {
   private _el: HTMLElement;
   private _js: boolean = false;
   private _top: number = 0;
+  private _h: number = 0;
   private _scLsn: Function;
   private _endTmr: Function;
   private _domWrites: Function[] = [];
@@ -47,13 +48,17 @@ export class ScrollView {
       // ******** DOM READ ****************
       var left = this.getLeft();
 
+      // get the current scrollHeight
+      // ******** DOM READ ****************
+      var height = this.getHeight();
+
       if (!this.isScrolling) {
         // currently not scrolling, so this is a scroll start
         this.isScrolling = true;
         positions.length = 0;
         positions.push(top, left, timeStamp);
 
-        this._scrollEvent(EVENT_SCROLL_START, top, left, timeStamp, 0, 0);
+        this._scrollEvent(EVENT_SCROLL_START, top, left, height, timeStamp, 0, 0);
 
       } else {
         // still actively scrolling
@@ -81,7 +86,7 @@ export class ScrollView {
           velocityX = ((movedLeft / timeOffset) * FRAME_MS);
         }
 
-        this._scrollEvent(EVENT_SCROLL, top, left, timeStamp, velocityY, velocityX);
+        this._scrollEvent(EVENT_SCROLL, top, left, height, timeStamp, velocityY, velocityX);
       }
 
       // debounce then emit on the last scroll event
@@ -90,7 +95,7 @@ export class ScrollView {
         // haven't scrolled in a while, so it's a scrollend
         this.isScrolling = false;
         positions.length = 0;
-        this._scrollEvent(EVENT_SCROLL_END, top, left, rafTimeStamp, 0, 0);
+        this._scrollEvent(EVENT_SCROLL_END, top, left, height, rafTimeStamp, 0, 0);
       });
 
     };
@@ -105,7 +110,7 @@ export class ScrollView {
   /**
    * @private
    */
-  private _scrollEvent(eventType: string, top: number, left: number, timeStamp: number, velocityY: number, velocityX: number) {
+  private _scrollEvent(eventType: string, top: number, left: number, height: number, timeStamp: number, velocityY: number, velocityX: number) {
     const ev = this._ev;
 
     // double check we've cleared out callbacks
@@ -113,15 +118,16 @@ export class ScrollView {
 
     ev.type = eventType;
     ev.timeStamp = timeStamp;
-    ev.currentY = top;
-    ev.currentX = left;
+    ev.scrollTop = top;
+    ev.scrollLeft = left;
+    ev.scrollHeight = height;
     ev.velocityY = velocityY;
     ev.velocityX = velocityX;
 
     if (eventType === EVENT_SCROLL_START) {
       // remember the start positions
-      ev.startY = ev.currentY;
-      ev.startX = ev.currentX;
+      ev.startY = ev.scrollTop;
+      ev.startX = ev.scrollLeft;
 
       // forget the deltas
       ev.deltaY = ev.deltaX = 0;
@@ -132,8 +138,8 @@ export class ScrollView {
     }
 
     if (eventType === EVENT_SCROLL_START || eventType === EVENT_SCROLL) {
-      ev.deltaY = (ev.currentY - ev.startY);
-      ev.deltaX = (ev.currentX - ev.startX);
+      ev.deltaY = (ev.scrollTop - ev.startY);
+      ev.deltaX = (ev.scrollLeft - ev.startX);
 
       // emit on each scrollstart or just scroll events
       // should not fire on scrollend event
@@ -197,7 +203,7 @@ export class ScrollView {
         this._top = Math.min(Math.max(this._top + velocityY, 0), max);
 
         // ******** DOM READ THEN DOM WRITE ****************
-        this._scrollEvent(EVENT_SCROLL, this._top, 0, timeStamp, velocityY, 0);
+        this._scrollEvent(EVENT_SCROLL, this._top, 0, this.getHeight(), timeStamp, velocityY, 0);
 
         // ******** DOM WRITE ****************
         this.setTop(this._top);
@@ -209,7 +215,7 @@ export class ScrollView {
 
         } else {
           this.isScrolling = false;
-          this._scrollEvent(EVENT_SCROLL_END, this._top, 0, timeStamp, velocityY, 0);
+          this._scrollEvent(EVENT_SCROLL_END, this._top, 0, this.getHeight(), timeStamp, velocityY, 0);
         }
       }
     };
@@ -221,7 +227,7 @@ export class ScrollView {
       positions.push(pointerCoord(touchEvent).y, touchEvent.timeStamp);
     };
 
-    const touchMove = nativeRafDebounce((touchEvent: TouchEvent) =>  {
+    const touchMove = (touchEvent: TouchEvent) =>  {
       if (!positions.length) {
         return;
       }
@@ -239,15 +245,15 @@ export class ScrollView {
 
       if (!this.isScrolling) {
         this.isScrolling = true;
-        this._scrollEvent(EVENT_SCROLL_START, this._top, 0, touchEvent.timeStamp, velocityY, 0);
+        this._scrollEvent(EVENT_SCROLL_START, this._top, 0, this.getHeight(), touchEvent.timeStamp, velocityY, 0);
       }
 
       // ******** DOM READ THEN DOM WRITE ****************
-      this._scrollEvent(EVENT_SCROLL, this._top, 0, touchEvent.timeStamp, velocityY, 0);
+      this._scrollEvent(EVENT_SCROLL, this._top, 0, this.getHeight(), touchEvent.timeStamp, velocityY, 0);
 
       // ******** DOM WRITE ****************
       this.setTop(this._top);
-    });
+    };
 
     const touchEnd = (touchEvent: TouchEvent) => {
       // figure out what the scroll position was about 100ms ago
@@ -320,6 +326,17 @@ export class ScrollView {
       return 0;
     }
     return this._el.scrollLeft;
+  }
+
+  getHeight() {
+    if (!this._h) {
+      this._h = this._el.scrollHeight;
+    }
+    return this._h;
+  }
+
+  resetHeight() {
+    this._h = null;
   }
 
   setTop(top: number) {
@@ -446,8 +463,9 @@ export class ScrollView {
 
 export interface ScrollEvent {
   type?: string;
-  currentY?: number;
-  currentX?: number;
+  scrollTop?: number;
+  scrollLeft?: number;
+  scrollHeight?: number;
   startY?: number;
   startX?: number;
   deltaY?: number;
