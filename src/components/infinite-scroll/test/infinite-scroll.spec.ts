@@ -41,6 +41,7 @@ describe('Infinite Scroll', () => {
     });
 
     it('should not run again if ran less than 32ms ago', () => {
+      ev.timeStamp = Date.now();
       inf._lastCheck = Date.now();
       var result = inf._onScroll(ev);
       expect(result).toEqual(2);

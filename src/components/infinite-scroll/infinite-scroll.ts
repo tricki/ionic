@@ -166,23 +166,21 @@ export class InfiniteScroll {
       return 1;
     }
 
-    let now = Date.now();
-
-    if (this._lastCheck + 32 > now) {
+    if (this._lastCheck + 32 > ev.timeStamp) {
       // no need to check less than every XXms
       return 2;
     }
-    this._lastCheck = now;
+    this._lastCheck = ev.timeStamp;
 
     // ******** DOM READ ****************
-    let infiniteHeight = this._elementRef.nativeElement.scrollHeight;
+    const infiniteHeight = this._elementRef.nativeElement.scrollHeight;
     if (!infiniteHeight) {
       // if there is no height of this element then do nothing
       return 3;
     }
 
     // ******** DOM READ ****************
-    let d = this._content.getContentDimensions();
+    const d = this._content.getContentDimensions();
 
     let reloadY = d.contentHeight;
     if (this._thrPc) {
@@ -193,7 +191,7 @@ export class InfiniteScroll {
 
     // ******** DOM READS ABOVE / DOM WRITES BELOW ****************
 
-    let distanceFromInfinite = ((d.scrollHeight - infiniteHeight) - d.scrollTop) - reloadY;
+    const distanceFromInfinite = ((d.scrollHeight - infiniteHeight) - d.scrollTop) - reloadY;
     if (distanceFromInfinite < 0) {
       // ******** DOM WRITE ****************
       ev.domWrite(() => {
