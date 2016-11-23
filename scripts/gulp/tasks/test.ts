@@ -21,30 +21,37 @@ task('test.imageserver', () => {
   const url = require('url');
 
   const port = 8900;
+  let connections = 0;
 
-  function handleRequest(req: any, res: any) {
+  function handleRequest(req, res) {
     const query = url.parse(req.url, true).query;
-
     const delay = query.delay || 2000;
-    const id = query.id ||
-     Math.round(Math.random() * 1000);
+    const id = query.id || Math.round(Math.random() * 1000);
+    const w = query.width || 80;
+    const h = query.width || 80;
+    const color = query.color || 'yellow';
+
+    connections++;
 
     setTimeout(() => {
-      const svg = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"
-                      style="background-color: yellow; width: 80px; height: 80px;">
-                    <text x="20" y="30">${id}</text>
-                  </svg>`;
-
+      connections--;
       res.setHeader('Content-Type', 'image/svg+xml');
       res.setHeader('Access-Control-Allow-Origin', '*');
-      res.end(svg);
-    }, delay);
+      res.end(`<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"
+                  style="background-color: ${color}; width: ${w}px; height: ${h}px;">
+                <text x="10" y="20">${id}</text>
+              </svg>`);
+    }, delay * connections);
   }
 
   http.createServer(handleRequest).listen(port, () => {
     console.log(`  Mock image server listening on: http://localhost:${port}/?delay=2000&id=99`);
-    console.log(`  Add a "delay" querystring to delay its response`);
-    console.log(`  Add an "id" querystring so the id goes in the image`);
+    console.log(`  Possible querystrings:`);
+    console.log(`    delay: how long it should take to respond, defaults to 2000`);
+    console.log(`    id: the text to go in the svg image, defaults to random number`);
+    console.log(`    w: image width, defaults to 80`);
+    console.log(`    h: image height, defaults to 80`);
+    console.log(`    color: image background color, defaults to yellow`);
   });
 
 });
