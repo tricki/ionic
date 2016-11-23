@@ -16,6 +16,39 @@ task('test.coverage', ['test.assembleVendorJs', 'compile.karma'], (done: Functio
   });
 });
 
+task('test.imageserver', () => {
+  const http = require('http');
+  const url = require('url');
+
+  const port = 8900;
+
+  function handleRequest(req: any, res: any) {
+    const query = url.parse(req.url, true).query;
+
+    const delay = query.delay || 2000;
+    const id = query.id ||
+     Math.round(Math.random() * 1000);
+
+    setTimeout(() => {
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"
+                      style="background-color: yellow; width: 80px; height: 80px;">
+                    <text x="20" y="30">${id}</text>
+                  </svg>`;
+
+      res.setHeader('Content-Type', 'image/svg+xml');
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.end(svg);
+    }, delay);
+  }
+
+  http.createServer(handleRequest).listen(port, () => {
+    console.log(`  Mock image server listening on: http://localhost:${port}/?delay=2000&id=99`);
+    console.log(`  Add a "delay" querystring to delay its response`);
+    console.log(`  Add an "id" querystring so the id goes in the image`);
+  });
+
+});
+
 function karmaTest(watch: boolean, done: Function) {
   const karma = require('karma');
   const argv = require('yargs').argv;
