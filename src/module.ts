@@ -10,6 +10,7 @@ import { HttpModule } from '@angular/http';
 import { ActionSheetController } from './components/action-sheet/action-sheet';
 import { AlertController } from './components/alert/alert';
 import { App } from './components/app/app';
+import { ClickBlock } from './util/click-block';
 import { Config, ConfigToken, setupConfig } from './config/config';
 import { DeepLinker, setupDeepLinker } from './navigation/deep-linker';
 import { Events, setupProvideEvents } from './util/events';
@@ -34,7 +35,6 @@ import { registerTransitions } from './transitions/transition-registry';
 import { TransitionController } from './transitions/transition-controller';
 import { AppRootToken } from './components/app/app-root';
 import { UrlSerializer, setupUrlSerializer, DeepLinkConfigToken } from './navigation/url-serializer';
-import { ClickBlock } from './util/click-block';
 /**
  * Import Overlay Entry Components
  */
@@ -103,13 +103,13 @@ export { ViewController } from './navigation/view-controller';
   declarations: [
     ActionSheetCmp,
     AlertCmp,
+    ClickBlock,
     IONIC_DIRECTIVES,
     LoadingCmp,
     ModalCmp,
     PickerCmp,
     PopoverCmp,
-    ToastCmp,
-    ClickBlock
+    ToastCmp
   ],
   entryComponents: [
     ActionSheetCmp,

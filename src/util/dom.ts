@@ -83,20 +83,6 @@ export function zoneRafFrames(framesToWait: number, callback: Function) {
   }
 }
 
-export function nativeRafThrottle(callback: any) {
-  var wait = false;
-
-  return function (ev: any) {
-    if (!wait) {
-      callback.call(this, ev);
-      wait = true;
-      nativeRaf(function () {
-        wait = false;
-      });
-    }
-  };
-}
-
 export const CSS: {
   transform?: string,
   transition?: string,

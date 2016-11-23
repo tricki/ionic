@@ -286,9 +286,9 @@ export function initReadNodes(nodes: VirtualNode[], cells: VirtualCell[], data: 
   if (nodes.length && cells.length) {
     // first node
     // ******** DOM READ ****************
-    let firstEle = getElement(nodes[0]);
-    cells[0].top = firstEle.clientTop;
-    cells[0].left = firstEle.clientLeft;
+    var ele = getElement(nodes[0]);
+    cells[0].top = ele.clientTop;
+    cells[0].left = ele.clientLeft;
     cells[0].row = 0;
 
     // ******** DOM READ ****************
@@ -301,7 +301,9 @@ export function initReadNodes(nodes: VirtualNode[], cells: VirtualCell[], data: 
     for (var i = 0; i < nodes.length; i++) {
       if (nodes[i].hidden) {
         // ******** DOM WRITE ****************
-        getElement(nodes[i]).classList.add('virtual-hidden');
+        ele = getElement(nodes[i]);
+        ele.classList.add('virtual-hidden');
+        ele.setAttribute('data-vtop', 'hidden');
       }
     }
   }
@@ -443,11 +445,15 @@ export function writeToNodes(nodes: VirtualNode[], cells: VirtualCell[], totalRe
 
           // https://www.w3.org/TR/wai-aria/states_and_properties#aria-posinset
           // ******** DOM WRITE ****************
-          element.setAttribute('aria-posinset', (node.cell + 1).toString());
+          element.setAttribute('aria-posinset', <any>(node.cell + 1));
 
           // https://www.w3.org/TR/wai-aria/states_and_properties#aria-setsize
           // ******** DOM WRITE ****************
           element.setAttribute('aria-setsize', totalCells);
+
+          // set dataset attribute of the virtual location
+          element.setAttribute('data-vtop', <any>cell.top);
+          element.setAttribute('data-vleft', <any>cell.left);
         }
       }
     }

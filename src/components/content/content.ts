@@ -3,11 +3,12 @@ import { ChangeDetectionStrategy, Component, ElementRef, EventEmitter, Input, Ng
 import { App } from '../app/app';
 import { Config } from '../../config/config';
 import { eventOptions } from '../../util/ui-event-manager';
+import { Img } from '../img/img';
 import { Ion } from '../ion';
 import { isTrueProperty, assert } from '../../util/util';
 import { Keyboard } from '../../util/keyboard';
 import { nativeRaf, transitionEnd } from '../../util/dom';
-import { ScrollView } from '../../util/scroll-view';
+import { ScrollView, ScrollEvent } from '../../util/scroll-view';
 import { Tabs } from '../tabs/tabs';
 import { ViewController } from '../../navigation/view-controller';
 
@@ -133,6 +134,8 @@ export class Content extends Ion implements OnDestroy, OnInit {
   _scLsn: Function;
   _sbPadding: boolean;
   _fullscreen: boolean;
+  _lazyLoadImages: boolean = true;
+  _lazyImgs: Img[] = [];
   _footerEle: HTMLElement;
 
   /*
@@ -197,6 +200,8 @@ export class Content extends Ion implements OnDestroy, OnInit {
    * @private
    */
   ngOnInit() {
+    if (this._scroll) return;
+
     const children = this._elementRef.nativeElement.children;
     assert(children && children.length >= 2, 'content needs at least two children');
 
@@ -207,21 +212,23 @@ export class Content extends Ion implements OnDestroy, OnInit {
     this._scroll = new ScrollView(this._scrollEle);
 
     // subscribe to the scroll start
-    this._scroll.scrollStart.subscribe(scrollData => {
-      this.ionScrollStart.emit(scrollData);
+    this._scroll.scrollStart.subscribe(ev => {
+      this.ionScrollStart.emit(ev);
+      pauseLazyImages(this._lazyImgs);
     });
 
     // subscribe to every scroll move
-    this._scroll.scroll.subscribe(scrollData => {
+    this._scroll.scroll.subscribe(ev => {
       // remind the app that it's currently scrolling
       this._app.setScrolling();
 
-      this.ionScroll.emit(scrollData);
+      this.ionScroll.emit(ev);
     });
 
     // subscribe to the scroll end
-    this._scroll.scrollEnd.subscribe(scrollData => {
-      this.ionScrollEnd.emit(scrollData);
+    this._scroll.scrollEnd.subscribe(ev => {
+      this.ionScrollEnd.emit(ev);
+      playLazyImages(this._lazyImgs, ev);
     });
   }
 
@@ -361,6 +368,9 @@ export class Content extends Ion implements OnDestroy, OnInit {
     return this._scroll.scrollToBottom(duration);
   }
 
+  /**
+   * @private
+   */
   enableJsScroll() {
     this._scroll.enableJsScroll();
   }
@@ -380,6 +390,38 @@ export class Content extends Ion implements OnDestroy, OnInit {
   set fullscreen(val: boolean) {
     this._fullscreen = isTrueProperty(val);
   }
+
+  /**
+   * @private
+   */
+  @Input()
+  get lazyLoadImages(): boolean {
+    return !!this._lazyLoadImages;
+  }
+  set lazyLoadImages(val: boolean) {
+    this._lazyLoadImages = isTrueProperty(val);
+  }
+
+  /**
+   * @private
+   */
+  addLazyImage(img: Img) {
+    this._lazyImgs.push(img);
+  }
+
+  /**
+   * @private
+   */
+  removeLazyImage(img: Img) {
+    const index = this._lazyImgs.indexOf(img);
+    if (index > -1) {
+      this._lazyImgs.splice(index, 1);
+    }
+  }
+
+  /**
+   * @private
+   */
 
   /**
    * @private
@@ -625,6 +667,49 @@ export class Content extends Ion implements OnDestroy, OnInit {
     }
   }
 
+}
+
+function pauseLazyImages(imgs: Img[]) {
+  // all images should be paused
+  for (var i = 0; i < imgs.length; i++) {
+    imgs[i].pause(true);
+  }
+}
+
+function playLazyImages(imgs: Img[], ev: ScrollEvent) {
+  // unpause images
+  // abort those who shouldn't be taking up connections and not viewable
+  // keep letting requests go that are viewable
+  // and start up new requests for images that are now viewable
+
+  // build a list by sorting all the images from top to bottom
+  // ******** DOM READ ****************
+  const topToBottom = imgs.sort(sortTopToBottom);
+
+  ev.domWrite(() => {
+
+  });
+}
+
+function sortTopToBottom(a: Img, b: Img) {
+  const aTop = a.getTop();
+  const bTop = b.getTop();
+  if (aTop < bTop) {
+    return -1;
+  }
+  if (aTop > bTop) {
+    return 1;
+  }
+
+  const aLeft = a.getLeft();
+  const bLeft = b.getLeft();
+  if (aLeft < bLeft) {
+    return -1;
+  }
+  if (aLeft > bLeft) {
+    return 1;
+  }
+  return 0;
 }
 
 function parsePxUnit(val: string): number {

@@ -1,8 +1,8 @@
-import { ChangeDetectionStrategy, Component, ElementRef, HostBinding, Input, NgZone, Optional, Renderer, ViewChild, ViewEncapsulation } from '@angular/core';
+import { ChangeDetectionStrategy, Component, ElementRef, HostBinding, Input, NgZone, OnDestroy, OnInit, Optional, Renderer, ViewChild, ViewEncapsulation } from '@angular/core';
 
 import { Content } from '../content/content';
 import { ImgLoader } from './img-loader';
-import { isPresent } from '../../util/util';
+import { isPresent, isTrueProperty } from '../../util/util';
 import { nativeRaf } from '../../util/dom';
 import { Platform } from '../../platform/platform';
 
@@ -18,7 +18,7 @@ import { Platform } from '../../platform/platform';
   changeDetection: ChangeDetectionStrategy.OnPush,
   encapsulation: ViewEncapsulation.None,
 })
-export class Img {
+export class Img implements OnDestroy, OnInit {
   /** @private */
   _src: string = '';
   /** @private */
@@ -33,6 +33,10 @@ export class Img {
   _init: boolean;
   /** @private */
   _cache: boolean = true;
+  /** @private */
+  _lazyLoad: boolean = true;
+  /** @private */
+  _webWorker: boolean = true;
   /** @private */
   @ViewChild('img') _img: ElementRef;
 
@@ -55,6 +59,9 @@ export class Img {
       this._load();
     }
 
+    if (this._lazyLoad) {
+      this._content.addLazyImage(this);
+    }
   }
 
   @Input()
@@ -92,13 +99,49 @@ export class Img {
    * also not kick off at this time since we might not even need the
    * image since we could be scrolling by it quickly.
    */
-  pause(shouldLock: boolean) {
-    this._isPaused = shouldLock;
+  pause(shouldPause: boolean) {
+    this._isPaused = shouldPause;
 
-    if (!shouldLock) {
-      // just been unlocked
+    if (!shouldPause) {
+      // just been unpaused
 
     }
+  }
+
+  /**
+   * @private
+   * DOM READ
+   */
+  getTop() {
+    let ele: HTMLElement = this._elementRef.nativeElement;
+    let parentEle = ele.parentElement;
+    for (var i = 0; i < 10 && parentEle; i++) {
+      var vtop = (<any>parentEle.dataset).vtop;
+      if (vtop) {
+        if (vtop === 'hidden') {
+          return Infinity;
+        }
+        return parseInt((<any>parentEle.dataset).vtop, 10);
+      }
+      parentEle = parentEle.parentElement;
+    }
+    return ele.offsetTop;
+  }
+
+  /**
+   * @private
+   * DOM READ
+   */
+  getLeft() {
+    let ele: HTMLElement = this._elementRef.nativeElement;
+    let parentEle = ele.parentElement;
+    for (var i = 0; i < 10 && parentEle; i++) {
+      if ((<any>parentEle.dataset).vleft) {
+        return parseInt((<any>parentEle.dataset).vleft, 10);
+      }
+      parentEle = parentEle.parentElement;
+    }
+    return ele.offsetLeft;
   }
 
   _load() {
@@ -138,6 +181,22 @@ export class Img {
   }
 
   @Input()
+  get lazyLoad(): boolean {
+    return !!this._lazyLoad;
+  }
+  set lazyLoad(val: boolean) {
+    this._lazyLoad = isTrueProperty(val);
+  }
+
+  @Input()
+  get webWorker(): boolean {
+    return !!this._webWorker;
+  }
+  set webWorker(val: boolean) {
+    this._webWorker = isTrueProperty(val);
+  }
+
+  @Input()
   get cache(): boolean {
     return this._cache;
   }
@@ -167,6 +226,10 @@ export class Img {
   @HostBinding('style.height')
   get _height(): string {
     return isPresent(this._h) ? this._h : '';
+  }
+
+  ngOnDestroy() {
+    this._content.removeLazyImage(this);
   }
 
 }

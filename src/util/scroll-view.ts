@@ -1,7 +1,7 @@
 import { Subject } from 'rxjs/Subject';
 
 import { assert } from './util';
-import { CSS, pointerCoord, nativeRaf, nativeRafThrottle, rafFrames, cancelRaf } from '../util/dom';
+import { CSS, pointerCoord, rafFrames, nativeRaf, nativeRafDebounce, cancelRaf } from '../util/dom';
 import { eventOptions, listenEvent } from './ui-event-manager';
 
 
@@ -28,52 +28,95 @@ export class ScrollView {
 
   constructor(ele: HTMLElement) {
     assert(ele, 'scroll-view, element can not be null');
-
     this._el = ele;
+    this.enableNativeScrolling();
+  }
+
+  private enableNativeScrolling() {
+    this._scLsn && this._scLsn();
 
     const opts = eventOptions(false, true);
+    const positions: number[] = [];
 
-    this._scLsn = listenEvent(ele, EVENT_SCROLL, false, opts, nativeRafThrottle(() => {
+    const run = (timeStamp: number) => {
+      // get the current scrollTop
+      // ******** DOM READ ****************
+      var top = this.getTop();
+
+      // get the current scrollLeft
+      // ******** DOM READ ****************
+      var left = this.getLeft();
 
       if (!this.isScrolling) {
         // currently not scrolling, so this is a scroll start
         this.isScrolling = true;
-        this._scrollEvent(EVENT_SCROLL_START);
+        positions.length = 0;
+        positions.push(top, left, timeStamp);
+
+        this._scrollEvent(EVENT_SCROLL_START, top, left, timeStamp, 0, 0);
 
       } else {
         // still actively scrolling
-        this._scrollEvent(EVENT_SCROLL);
+        positions.push(top, left, timeStamp);
+
+        var endPos = (positions.length - 1);
+        var startPos = endPos;
+        var timeRange = (timeStamp - 100);
+        var velocityY = 0;
+        var velocityX = 0;
+
+        // move pointer to position measured 100ms ago
+        for (var i = endPos; i > 0 && positions[i] > timeRange; i -= 3) {
+          startPos = i;
+        }
+
+        if (startPos !== endPos) {
+          // compute relative movement between these two points
+          var timeOffset = (positions[endPos] - positions[startPos]);
+          var movedTop = (positions[startPos - 2] - positions[endPos - 2]);
+          var movedLeft = (positions[startPos - 1] - positions[endPos - 1]);
+
+          // based on XXms compute the movement to apply for each render step
+          velocityY = ((movedTop / timeOffset) * FRAME_MS);
+          velocityX = ((movedLeft / timeOffset) * FRAME_MS);
+        }
+
+        this._scrollEvent(EVENT_SCROLL, top, left, timeStamp, velocityY, velocityX);
       }
 
       // debounce then emit on the last scroll event
       this._endTmr && this._endTmr();
-      this._endTmr = rafFrames(6, () => {
+      this._endTmr = rafFrames(6, (rafTimeStamp) => {
         // haven't scrolled in a while, so it's a scrollend
         this.isScrolling = false;
-        this._scrollEvent(EVENT_SCROLL_END);
+        positions.length = 0;
+        this._scrollEvent(EVENT_SCROLL_END, top, left, rafTimeStamp, 0, 0);
       });
 
-    }));
+    };
+
+    this._scLsn = listenEvent(this._el, EVENT_SCROLL, false, opts, () => {
+      nativeRaf(rafTimeStamp => {
+        run(rafTimeStamp);
+      });
+    });
   }
 
   /**
    * @private
    */
-  private _scrollEvent(eventType: string) {
+  private _scrollEvent(eventType: string, top: number, left: number, timeStamp: number, velocityY: number, velocityX: number) {
     const ev = this._ev;
 
     // double check we've cleared out callbacks
     this._domWrites.length = 0;
 
     ev.type = eventType;
-
-    // get the current scrollTop
-    // ******** DOM READ ****************
-    ev.currentY = this.getTop();
-
-    // get the current scrollLeft
-    // ******** DOM READ ****************
-    ev.currentX = this.getLeft();
+    ev.timeStamp = timeStamp;
+    ev.currentY = top;
+    ev.currentX = left;
+    ev.velocityY = velocityY;
+    ev.velocityX = velocityX;
 
     if (eventType === EVENT_SCROLL_START) {
       // remember the start positions
@@ -123,70 +166,67 @@ export class ScrollView {
    * until iOS apps can take advantage of scroll events at all times.
    * The goal is to eventually remove JS scrolling entirely. When we
    * no longer have to worry about iOS not firing scroll events during
-   * inertia then this can be burned to the ground.
+   * inertia then this can be burned to the ground. iOS's more modern
+   * WKWebView does not have this issue, only UIWebView does.
    */
   enableJsScroll() {
     this._js = true;
     const ele = this._el;
     const positions: number[] = [];
-    let velocity = 0;
     let rafId: number;
     let max: number;
+    let velocityY = 0;
 
     // stop listening for actual scroll events
     this._scLsn();
 
-
     const setMax = () => {
       if (!max) {
         // ******** DOM READ ****************
-        max = (this._el.offsetHeight - this._el.parentElement.offsetHeight + this._el.parentElement.offsetTop);
+        max = (ele.offsetHeight - ele.parentElement.offsetHeight + ele.parentElement.offsetTop);
       }
     };
 
-    const decelerate = () => {
-      console.debug(`scroll-view, decelerate, velocity: ${velocity}`);
-      if (velocity) {
-        velocity *= DECELERATION_FRICTION;
+    const decelerate = (timeStamp: number) => {
+      console.debug(`scroll-view, decelerate, velocity: ${velocityY}`);
+      if (velocityY) {
+        velocityY *= DECELERATION_FRICTION;
 
         // update top with updated velocity
         // clamp top within scroll limits
-        this._top = Math.min(Math.max(this._top + velocity, 0), max);
+        this._top = Math.min(Math.max(this._top + velocityY, 0), max);
 
         // ******** DOM READ THEN DOM WRITE ****************
-        this._scrollEvent(EVENT_SCROLL);
+        this._scrollEvent(EVENT_SCROLL, this._top, 0, timeStamp, velocityY, 0);
 
         // ******** DOM WRITE ****************
         this.setTop(this._top);
 
-        if (this._top > 0 && this._top < max && Math.abs(velocity) > MIN_VELOCITY_CONTINUE_DECELERATION) {
-          rafId = nativeRaf(decelerate.bind(this));
+        if (this._top > 0 && this._top < max && Math.abs(velocityY) > MIN_VELOCITY_CONTINUE_DECELERATION) {
+          rafId = nativeRaf((rafTimeStamp: number) => {
+            decelerate(rafTimeStamp);
+          });
 
         } else {
           this.isScrolling = false;
-          this._scrollEvent(EVENT_SCROLL_END);
+          this._scrollEvent(EVENT_SCROLL_END, this._top, 0, timeStamp, velocityY, 0);
         }
       }
     };
 
-    const touchStart = (ev: TouchEvent) => {
-      velocity = 0;
+    const touchStart = (touchEvent: TouchEvent) => {
+      velocityY = 0;
       positions.length = 0;
       max = null;
-      positions.push(pointerCoord(ev).y, Date.now());
+      positions.push(pointerCoord(touchEvent).y, touchEvent.timeStamp);
     };
 
-    const touchMove = nativeRafThrottle((ev: TouchEvent) =>  {
+    const touchMove = nativeRafDebounce((touchEvent: TouchEvent) =>  {
       if (!positions.length) {
         return;
       }
 
-      if (!this.isScrolling) {
-        this.isScrolling = true;
-        this._scrollEvent(EVENT_SCROLL_START);
-      }
-
-      var y = pointerCoord(ev).y;
+      var y = pointerCoord(touchEvent).y;
 
       // ******** DOM READ ****************
       setMax();
@@ -195,29 +235,34 @@ export class ScrollView {
 
       this._top = Math.min(Math.max(this._top, 0), max);
 
-      positions.push(y, Date.now());
+      positions.push(y, touchEvent.timeStamp);
+
+      if (!this.isScrolling) {
+        this.isScrolling = true;
+        this._scrollEvent(EVENT_SCROLL_START, this._top, 0, touchEvent.timeStamp, velocityY, 0);
+      }
 
       // ******** DOM READ THEN DOM WRITE ****************
-      this._scrollEvent(EVENT_SCROLL);
+      this._scrollEvent(EVENT_SCROLL, this._top, 0, touchEvent.timeStamp, velocityY, 0);
 
       // ******** DOM WRITE ****************
       this.setTop(this._top);
     });
 
-    const touchEnd = (ev: TouchEvent) => {
+    const touchEnd = (touchEvent: TouchEvent) => {
       // figure out what the scroll position was about 100ms ago
-      velocity = 0;
+      velocityY = 0;
       cancelRaf(rafId);
 
       if (!positions.length) return;
 
-      var y = pointerCoord(ev).y;
+      var y = pointerCoord(touchEvent).y;
 
-      positions.push(y, Date.now());
+      positions.push(y, touchEvent.timeStamp);
 
       var endPos = (positions.length - 1);
       var startPos = endPos;
-      var timeRange = (Date.now() - 100);
+      var timeRange = (touchEvent.timeStamp - 100);
 
       // move pointer to position measured 100ms ago
       for (var i = endPos; i > 0 && positions[i] > timeRange; i -= 2) {
@@ -226,18 +271,20 @@ export class ScrollView {
 
       if (startPos !== endPos) {
         // compute relative movement between these two points
-        let timeOffset = (positions[endPos] - positions[startPos]);
-        let movedTop = (positions[startPos - 1] - positions[endPos - 1]);
+        var timeOffset = (positions[endPos] - positions[startPos]);
+        var movedTop = (positions[startPos - 1] - positions[endPos - 1]);
 
         // based on XXms compute the movement to apply for each render step
-        velocity = ((movedTop / timeOffset) * FRAME_MS);
+        velocityY = ((movedTop / timeOffset) * FRAME_MS);
 
         // verify that we have enough velocity to start deceleration
-        if (Math.abs(velocity) > MIN_VELOCITY_START_DECELERATION) {
+        if (Math.abs(velocityY) > MIN_VELOCITY_START_DECELERATION) {
           // ******** DOM READ ****************
           setMax();
 
-          rafId = nativeRaf(decelerate.bind(this));
+          rafId = nativeRaf((rafTimeStamp: number) => {
+            decelerate(rafTimeStamp);
+          });
         }
       }
 
@@ -319,7 +366,7 @@ export class ScrollView {
     let attempts = 0;
 
     // scroll loop
-    function step() {
+    function step(timeStamp: number) {
       attempts++;
 
       if (!self._el || !self.isScrolling || attempts > maxAttempts) {
@@ -329,7 +376,7 @@ export class ScrollView {
         return;
       }
 
-      let time = Math.min(1, ((Date.now() - startTime) / duration));
+      let time = Math.min(1, ((timeStamp - startTime) / duration));
 
       // where .5 would be 50% of time on a linear scale easedT gives a
       // fraction based on the easing method
@@ -356,9 +403,9 @@ export class ScrollView {
     self.isScrolling = true;
 
     // chill out for a frame first
-    rafFrames(2, () => {
-      startTime = Date.now();
-      step();
+    rafFrames(2, (timeStamp) => {
+      startTime = timeStamp;
+      step(timeStamp);
     });
 
     return promise;
@@ -406,6 +453,9 @@ export interface ScrollEvent {
   deltaY?: number;
   deltaX?: number;
   domWrite?: DomFn;
+  timeStamp?: number;
+  velocityY?: number;
+  velocityX?: number;
 }
 
 
