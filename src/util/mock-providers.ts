@@ -5,6 +5,7 @@ import { AnimationOptions } from '../animations/animation';
 import { App } from '../components/app/app';
 import { IonicApp } from '../components/app/app-root';
 import { Config } from '../config/config';
+import { Content } from '../components/content/content';
 import { DeepLinker } from '../navigation/deep-linker';
 import { GestureController } from '../gestures/gesture-controller';
 import { Keyboard } from './keyboard';
@@ -68,6 +69,10 @@ export const mockTrasitionController = function(config: Config) {
     return trns;
   };
   return trnsCtrl;
+};
+
+export const mockContent = function(): Content {
+  return new Content(mockConfig(), mockElementRef(), mockRenderer(), null, null, mockZone(), null, null);
 };
 
 export const mockZone = function(): NgZone {

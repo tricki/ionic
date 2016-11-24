@@ -21,37 +21,41 @@ task('test.imageserver', () => {
   const url = require('url');
 
   const port = 8900;
-  let connections = 0;
+  let connections = [];
 
   function handleRequest(req, res) {
     const query = url.parse(req.url, true).query;
-    const delay = query.delay || 2000;
+    const delay = query.d || 1000;
     const id = query.id || Math.round(Math.random() * 1000);
-    const w = query.width || 80;
-    const h = query.width || 80;
-    const color = query.color || 'yellow';
+    const width = query.w || 80;
+    const height = query.h || 80;
+    const color = query.c || 'yellow';
 
-    connections++;
+    connections.push(req.url);
 
     setTimeout(() => {
-      connections--;
+      const index = connections.indexOf(req.url);
+      if (index > -1) {
+        connections.splice(index, 1);
+      }
+
       res.setHeader('Content-Type', 'image/svg+xml');
       res.setHeader('Access-Control-Allow-Origin', '*');
       res.end(`<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"
-                  style="background-color: ${color}; width: ${w}px; height: ${h}px;">
-                <text x="10" y="20">${id}</text>
+                  style="background-color: ${color}; width: ${width}px; height: ${height}px;">
+                <text x="5" y="22" style="font-family: Courier; font-size:24px">${id}</text>
               </svg>`);
-    }, delay * connections);
+    }, delay * (connections.indexOf(req.url) + 1));
   }
 
   http.createServer(handleRequest).listen(port, () => {
-    console.log(`  Mock image server listening on: http://localhost:${port}/?delay=2000&id=99`);
+    console.log(`  Mock image server listening on: http://localhost:${port}/?d=2000&id=99`);
     console.log(`  Possible querystrings:`);
-    console.log(`    delay: how long it should take to respond, defaults to 2000`);
-    console.log(`    id: the text to go in the svg image, defaults to random number`);
+    console.log(`    id: the text to go in the svg image, defaults to a random number`);
+    console.log(`    d: how many milliseconds it should take to respond, defaults to 1000`);
     console.log(`    w: image width, defaults to 80`);
     console.log(`    h: image height, defaults to 80`);
-    console.log(`    color: image background color, defaults to yellow`);
+    console.log(`    c: image color, defaults to yellow`);
   });
 
 });

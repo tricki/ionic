@@ -164,7 +164,7 @@ function getDataUri(contentType: string, arrayBuffer: ArrayBuffer) {
 }
 
 
-interface ImgData {
+export interface ImgData {
   time: number;
   cache: boolean;
   data?: string;
@@ -172,7 +172,7 @@ interface ImgData {
 }
 
 
-interface ImgRequestMessage {
+export interface ImgRequestMessage {
   data: {
     src: string;
     type: string;
@@ -180,7 +180,7 @@ interface ImgRequestMessage {
   };
 }
 
-interface ImgResponseMessage {
+export interface ImgResponseMessage {
   src: string;
   status?: number;
   data?: string;

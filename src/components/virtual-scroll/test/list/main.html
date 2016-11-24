@@ -17,11 +17,15 @@
     <button ion-button (click)="emptyList()">Empty List</button>
   </div>
 
+  <div padding>
+    <code>gulp test.imageserve</code>
+  </div>
+
   <ion-list [virtualScroll]="items">
 
     <ion-item class="item-text-wrap" *virtualItem="let item">
       <ion-thumbnail item-left>
-        <ion-img src="http://loremflickr.com/80/80/dog?{{item.id}}"></ion-img>
+        <ion-img src="http://localhost:8900/?d=1000&id={{item.id}}"></ion-img>
       </ion-thumbnail>
 
       <h2 class="text-wrap">{{item.title}}</h2>

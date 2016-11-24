@@ -1,32 +1,27 @@
+import { Subject } from 'rxjs/Subject';
 
 
 export class ImgLoader {
-  private _worker: Worker;
-  private _callbacks: {[src: string]: ImgWorkerCallback} = {};
+  private _w: Worker;
 
-  load(src: string, cache: boolean, callback: ImgWorkerCallback) {
-    this._callbacks[src] = callback;
-    this.getWorker().postMessage({
+  update = new Subject<any>();
+
+  load(src: string, cache: boolean) {
+    this.worker().postMessage({
       src: src,
       cache: cache
     });
   }
 
-  pause(src: string) {
-
-  }
-
   abort(src: string) {
-    delete this._callbacks[src];
-
-    this.getWorker().postMessage({
+    this.worker().postMessage({
       src: src,
       type: 'abort'
     });
   }
 
-  private getWorker() {
-    if (!this._worker) {
+  private worker() {
+    if (!this._w) {
       // create a blob from the inline worker string
       const workerBlob = new Blob([INLINE_WORKER]);
 
@@ -34,28 +29,26 @@ export class ImgLoader {
       const blobURL = window.URL.createObjectURL(workerBlob);
 
       // create the worker
-      this._worker = new Worker(blobURL);
+      this._w = new Worker(blobURL);
 
       // create worker onmessage handler
-      this._worker.onmessage = (ev: MessageEvent) => {
-        const msg: ImgWorkerResponseMessage = ev.data;
-
-        const callback = this._callbacks[msg.src];
-        if (callback) {
-          callback(msg);
-          delete this._callbacks[msg.src];
-        }
+      this._w.onmessage = (ev: MessageEvent) => {
+        // we got something back from the web worker
+        // let's emit this out to everyone listening
+        this.update.next(ev.data);
       };
 
       // create worker onerror handler
-      this._worker.onerror = (ev: ErrorEvent) => {
+      this._w.onerror = (ev: ErrorEvent) => {
         console.error(`ImgWorker: ${ev.message}`);
-        this._worker.terminate();
-        this._worker = null;
-        this._callbacks = {};
+        this._w.terminate();
+        this._w = null;
+        this.update.unsubscribe();
       };
     }
-    return this._worker;
+
+    // return that hard worker
+    return this._w;
   }
 
 }

@@ -226,21 +226,23 @@ export class Content extends Ion implements OnDestroy, OnInit {
       // emit to all of our other friends things be scrolling
       this.ionScroll.emit(ev);
 
-      // see if we should pause or play images
-      // depending on scroll velocity
-      const velocityY = Math.abs(ev.velocityY);
-      if (imgsPaused && velocityY < PAUSE_IMAGES_VELOCITY) {
-        // images are currently paused but the velocity
-        // is really slow, so it's ok to play them again
-        playImgs(this._imgs, ev);
-        imgsPaused = false;
+      if (this._imgs.length) {
+        // see if we should pause or play images
+        // depending on scroll velocity
+        var velocityY = Math.abs(ev.velocityY);
+        if (imgsPaused && velocityY < PAUSE_IMAGES_VELOCITY) {
+          // images are currently paused but the velocity
+          // is really slow, so it's ok to play them again
+          playImgs(this._imgs, ev);
+          imgsPaused = false;
 
-      } else if (!imgsPaused && velocityY > PAUSE_IMAGES_VELOCITY) {
-        // lazy images are not currently paused
-        // but we're scrolling really fast!!
-        // let's pause them so we don't cause jank
-        pauseImgs(this._imgs);
-        imgsPaused = true;
+        } else if (!imgsPaused && velocityY > PAUSE_IMAGES_VELOCITY) {
+          // lazy images are not currently paused
+          // but we're scrolling really fast!!
+          // let's pause them so we don't cause jank
+          pauseImgs(this._imgs);
+          imgsPaused = true;
+        }
       }
     });
 

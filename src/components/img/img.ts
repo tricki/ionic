@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, ElementRef, HostBinding, Input, NgZ
 
 import { Content } from '../content/content';
 import { ImgLoader } from './img-loader';
+import { ImgResponseMessage } from './img-worker';
 import { isPresent, isTrueProperty } from '../../util/util';
 import { nativeRaf } from '../../util/dom';
 import { Platform } from '../../platform/platform';
@@ -14,95 +15,104 @@ import { Platform } from '../../platform/platform';
   selector: 'ion-img',
   template:
     '<div class="img-placeholder" [style.height]="_h" [style.width]="_w"></div>' +
-    '<img class="ion-img" #img>',
+    '<img #img>',
   changeDetection: ChangeDetectionStrategy.OnPush,
   encapsulation: ViewEncapsulation.None,
 })
 export class Img implements OnDestroy, OnInit {
-  /** @private */
-  _pendingSrc: string = '';
-  /** @private */
-  _loadedSrc: string = '';
-  /** @private */
+  /** @internal */
+  _pendingSrc: string;
+  /** @internal */
+  _loadedSrc: string;
+  /** @internal */
   _tmpDataUri: string;
+  /** @internal */
+  _isPaused: boolean;
+  /** @internal */
+  _init: boolean;
+  /** @internal */
+  _cache: boolean = true;
+  /** @internal */
+  _lazyLoad: boolean = true;
+  /** @internal */
+  _ww: boolean = true;
+  /** @internal */
+  _sub: any;
+
   /** @private */
   _w: string;
   /** @private */
   _h: string;
   /** @private */
-  _isPaused: boolean;
-  /** @private */
-  _init: boolean;
-  /** @private */
-  _cache: boolean = true;
-  /** @private */
-  _lazyLoad: boolean = true;
-  /** @private */
-  _webWorker: boolean = true;
-  /** @private */
   @ViewChild('img') _img: ElementRef;
 
 
   constructor(
-    private _imgLoader: ImgLoader,
+    private _ldr: ImgLoader,
     private _elementRef: ElementRef,
     private _renderer: Renderer,
     private _platform: Platform,
     private _zone: NgZone,
     @Optional() private _content: Content
   ) {
-    this._loaded(false, true);
+    this._loaded(false);
   }
 
+  /**
+   * @private
+   */
   ngOnInit() {
     // img component is initialized now
     this._init = true;
-    if (isValidSrc(this._pendingSrc) && !this._isPaused) {
-      this._load();
-    }
 
     if (this._lazyLoad) {
       this._content.addImg(this);
+    }
+
+    if (isValidSrc(this._pendingSrc)) {
+      this._loadReqest(this._pendingSrc);
     }
   }
 
   @Input()
   get src(): string {
-    return this._loadedSrc;
+    return this._pendingSrc || this._loadedSrc;
   }
   set src(val: string) {
     if (!isValidSrc(val)) {
-      this._pendingSrc = val;
-      this._loaded(false, false);
+      // eww, bad src value
+      if (this._pendingSrc) {
+        this._ldr.abort(this._pendingSrc);
+      }
+      this._pendingSrc = this._loadedSrc = this._tmpDataUri = null;
+      this._loaded(false);
       return;
     }
 
-    // valid src
+    if (val === this._pendingSrc || val === this._loadedSrc) {
+      // hey what's going on here, it's the same!
+      return;
+    }
+
+    // new image, so let's set we're not loaded yet
+    this._loaded(false);
+
+    // woot! we've got a valid src
     this._pendingSrc = val;
 
-    // reset any datauri data we might have
-    this._tmpDataUri = null;
+    // reset any existing data we might have
+    this._loadedSrc = this._tmpDataUri = null;
 
-    if (this._isPaused) {
-      this._loaded(false, false);
-      return;
-    }
-
+    // only start loading if the component has been initialized
     if (this._init) {
       // this component has been initialized
       // so let's do the actual update
-      this._load();
-      this._loaded(false, true);
+      this._loadReqest(val);
     }
   }
 
   /**
    * @private
-   * "pausing" an image will allow existing http requests to continue,
-   * but once completed  they will not be rendered since it might cause
-   * jank (probably scrolling fast if it's paused). New http requests will
-   * also not kick off at this time since we might not even need the
-   * image since we could be scrolling by it quickly.
    */
   pause() {
     this._isPaused = true;
@@ -110,11 +120,6 @@ export class Img implements OnDestroy, OnInit {
 
   /**
    * @private
-   * "pausing" an image will allow existing http requests to continue,
-   * but once completed  they will not be rendered since it might cause
-   * jank (probably scrolling fast if it's paused). New http requests will
-   * also not kick off at this time since we might not even need the
-   * image since we could be scrolling by it quickly.
    */
   play() {
     this._isPaused = false;
@@ -122,44 +127,61 @@ export class Img implements OnDestroy, OnInit {
     if (this._tmpDataUri) {
       // we've already got a datauri to show!
       this._srcAttr(this._tmpDataUri);
-      this._loaded(true, true);
+      this._loaded(true);
       this._tmpDataUri = null;
+
+    } else if (this._pendingSrc) {
+      // still got a pending src
+      // let's load it up
+      this._loadReqest(this._pendingSrc);
     }
   }
 
-  _load() {
-    if (this._webWorker) {
+  /**
+   * @internal
+   */
+  _loadReqest(src: string) {
+    if (this._ww) {
       // load with the web worker
       // and receive a datauri to put into the src
-      this._imgLoader.load(this._pendingSrc, this._cache, msg => {
-        nativeRaf(() => {
-          this._receivedMsg(msg);
+
+      if (!this._sub) {
+        // create a subscription to the loader's update
+        // if we don't already have one
+        this._sub = this._ldr.update.subscribe((msg: ImgResponseMessage) => {
+          nativeRaf(() => {
+            this._loadResponse(msg);
+          });
         });
-      });
+      }
+
+      // tell the loader, to tell the web worker
+      // to request the image and start receiving it
+      this._ldr.load(src, this._cache);
 
     } else {
       // do not use web worker
-      // set the src normally
-      this._loadedSrc = this._pendingSrc;
-      this._tmpDataUri = null;
-      this._srcAttr(this._loadedSrc);
-      this._loaded(true, true);
+      this._pendingSrc = this._tmpDataUri = null;
+      this._loadedSrc = src;
+      this._srcAttr(src);
+      this._loaded(true);
     }
   }
 
-  _receivedMsg(msg: ImgResponseMessage) {
+  /**
+   * @internal
+   */
+  _loadResponse(msg: ImgResponseMessage) {
     if (msg.src !== this._pendingSrc) {
-      // the src already changed on us
-      // so this data is no longer valid!!
-      this._loadedSrc = '';
-      this._srcAttr('');
-      this._tmpDataUri = null;
-      this._loaded(false, false);
+      // this isn't the droid we're looking for
+      return;
+    }
 
-    } else if (msg.status === 200) {
+    if (msg.status === 200) {
       // success :)
       // remember this is the loaded src
       this._loadedSrc = msg.src;
+      this._pendingSrc = null;
 
       if (this._isPaused) {
         // we're currently paused, so we don't want to render anything
@@ -170,29 +192,33 @@ export class Img implements OnDestroy, OnInit {
       } else {
         // it's not paused, so it's safe to render the datauri
         this._srcAttr(msg.data);
-        this._loaded(true, true);
+        this._loaded(true);
       }
 
     } else {
       // error :(
-      console.error(`img, ${msg.msg}`);
+      console.error(`img, status: ${msg.status} ${msg.msg}`);
 
-      this._loadedSrc = '';
+      this._loadedSrc = this._pendingSrc = this._tmpDataUri = null;
       this._srcAttr('');
-      this._tmpDataUri = null;
-      this._loaded(false, false);
+      this._loaded(false);
     }
   }
 
-  _loaded(isLoaded: boolean, useFadeTransition: boolean) {
-    this._renderer.setElementClass(this._elementRef.nativeElement, 'img-loaded', isLoaded);
-    this._renderer.setElementClass(this._elementRef.nativeElement, 'img-no-fade', !useFadeTransition);
-  }
-
+  /**
+   * @internal
+   */
   _srcAttr(srcValue: string) {
     if (this._img) {
       this._renderer.setElementAttribute(this._img.nativeElement, 'src', srcValue);
     }
+  }
+
+  /**
+   * @internal
+   */
+  _loaded(isLoaded: boolean) {
+    this._renderer.setElementClass(this._elementRef.nativeElement, 'img-loaded', isLoaded);
   }
 
   /**
@@ -241,10 +267,10 @@ export class Img implements OnDestroy, OnInit {
 
   @Input()
   get webWorker(): boolean {
-    return !!this._webWorker;
+    return !!this._ww;
   }
   set webWorker(val: boolean) {
-    this._webWorker = isTrueProperty(val);
+    this._ww = isTrueProperty(val);
   }
 
   @Input()
@@ -280,6 +306,7 @@ export class Img implements OnDestroy, OnInit {
   }
 
   ngOnDestroy() {
+    this._sub && this._sub.unsubscribe();
     this._content.removeImg(this);
   }
 
@@ -303,6 +330,6 @@ function getUnitValue(val: any): string {
 }
 
 
-function isValidSrc(src: string) {
+export function isValidSrc(src: string) {
   return isPresent(src) && src !== '';
 }
